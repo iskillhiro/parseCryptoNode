@@ -3,6 +3,7 @@ const cors = require('cors')
 const dotenv = require('dotenv')
 const HoldersRoutes = require('./Routes/HoldersRoutes.js')
 const WalletsRoutes = require('./Routes/WalletsRoutes.js')
+
 dotenv.config()
 
 const app = express()
