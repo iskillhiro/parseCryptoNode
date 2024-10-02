@@ -1,61 +1,41 @@
-const dotenv = require('dotenv')
 const axios = require('axios')
-dotenv.config()
 
-const headers = {
-	Authorization: `Bearer ${process.env.API_KEY}`,
-	'Content-Type': 'application/json',
-}
+const QUICKNODE_URL =
+	'https://old-autumn-grass.solana-mainnet.quiknode.pro/56a454086ae175dd1d2b48c92c0ddb7756127eba'
 
-async function getWalletInfo(req, res) {
-	const hash = req.params.hash
-	const urlTransfers = `https://api.solana.fm/v0/accounts/${hash}/transfers?page=1`
-	const urlTokens = `https://api.solana.fm/v1/addresses/${hash}/tokens`
-	const urlBalance = `https://api.solana.fm/v0/accounts`
+async function getSolanaBalanceViaQuickNode(wallet) {
+	const headers = {
+		'Content-Type': 'application/json',
+	}
+
+	const payload = {
+		jsonrpc: '2.0',
+		id: 1,
+		method: 'getBalance',
+		params: [wallet],
+	}
 
 	try {
-		const [transfersResponse, tokensResponse, balanceResponse] =
-			await Promise.all([
-				axios.get(urlTransfers, { headers: headers }),
-				axios.get(urlTokens, { headers: headers }),
-				axios.post(
-					urlBalance,
-					{
-						accountHashes: [hash],
-						fields: ['*'],
-					},
-					{ headers: headers }
-				),
-			])
+		const response = await axios.post(QUICKNODE_URL, payload, { headers })
 
-		const totalTransactions = transfersResponse.data.results || []
-		const totalTokens = Object.values(tokensResponse.data.tokens) || []
+		if (response.status === 200) {
+			const lamports = response.data.result.value
+			const balanceSol = lamports / 1e9
 
-		let balance = 0
-		if (
-			balanceResponse.data &&
-			balanceResponse.data[0] &&
-			balanceResponse.data[0].onchain
-		) {
-			balance = balanceResponse.data[0].onchain.lamports / 1e9
+			if (balanceSol > 0) {
+				return balanceSol
+			}
 		} else {
 			console.error(
-				'Balance or onchain data is missing in the response:',
-				balanceResponse.data
+				`Ошибка при получении баланса для ${wallet}: ${response.status}`
 			)
 		}
-
-		return res.status(200).json({ totalTransactions, totalTokens, balance })
 	} catch (error) {
-		console.error(
-			`Ошибка при получении информации: ${
-				error.response?.data?.message || error.message
-			} ${error.response?.status || ''}`
-		)
-		return res.status(500).json({ error: 'Server error' })
+		console.error(error)
+		return 0
 	}
 }
 
 module.exports = {
-	getWalletInfo,
+	getSolanaBalanceViaQuickNode,
 }

@@ -1,5 +1,6 @@
 const dotenv = require('dotenv')
 const axios = require('axios')
+const { getSolanaBalanceViaQuickNode } = require('./ParseWallets')
 dotenv.config()
 
 const url =
@@ -11,75 +12,80 @@ const headers = {
 }
 
 async function parseHolders(req, res) {
-	let allHolderrs = []
+	const allHolders = []
+	const totalSupply = 1_000_000_000
 	let page = 1
 	let totalHolders = 0
-	const totalSupply = 1_000_000_000
 	let requestsCount = 0
 
-	while (true) {
-		const tokenInfo = await getTokenHolders(page)
-		requestsCount++
+	try {
+		while (true) {
+			const tokenInfo = await getTokenHolders(page)
+			requestsCount++
 
-		if (requestsCount % 10 === 0) {
-			await new Promise(resolve => setTimeout(resolve, 1000))
-		}
-
-		if (tokenInfo && tokenInfo.tokenAccounts) {
-			const holders = tokenInfo.tokenAccounts
-
-			if (holders.length === 0) {
-				break
+			// Ограничиваем количество запросов в секунду (throttling)
+			if (requestsCount % 10 === 0) {
+				await new Promise(resolve => setTimeout(resolve, 1000))
 			}
 
-			totalHolders += holders.length
+			if (tokenInfo && tokenInfo.tokenAccounts.length > 0) {
+				const holders = tokenInfo.tokenAccounts
+				totalHolders += holders.length
 
-			holders.forEach((account, index) => {
-				const owner = account.info.owner
-				const amount = parseFloat(account.info.tokenAmount.uiAmount)
-				const percentage = (amount / totalSupply) * 100
-				if (amount > 0) {
-					allHolderrs.push({ account, amount, percentage })
-				}
-			})
+				// Получаем балансы параллельно
+				const holderPromises = holders.map(async account => {
+					const owner = account.info.owner
+					const amount = parseFloat(account.info.tokenAmount.uiAmount)
+					const percentage = (amount / totalSupply) * 100
 
-			page++
-		} else {
-			break
+					// Получаем баланс через QuickNode
+					const balance = await getSolanaBalanceViaQuickNode(owner)
+
+					// Сохраняем только ненулевые значения
+					if (amount > 0 && balance > 0) {
+						return { account, amount, percentage, balance }
+					}
+				})
+
+				// Ожидаем завершения всех запросов
+				const resolvedHolders = await Promise.all(holderPromises)
+				allHolders.push(...resolvedHolders.filter(holder => holder)) // Фильтрация нулевых значений
+
+				page++
+			} else {
+				break
+			}
 		}
-	}
-	if (allHolderrs.length < 1) {
-		return res.status(404).json({
-			message: 'Not found',
-		})
-	}
-	sortedHolders = allHolderrs.sort((a, b) =>
-		a.percentage > b.percentage ? 1 : -1
-	)
 
-	return res.status(200).json({
-		totalHolders: allHolderrs.length,
-		allHolders: sortedHolders,
-	})
+		// Проверка, если держателей не найдено
+		if (allHolders.length < 1) {
+			return res.status(404).json({ message: 'Not found' })
+		}
+
+		// Сортировка по проценту владения
+		const sortedHolders = allHolders.sort((a, b) => b.percentage - a.percentage)
+
+		return res.status(200).json({
+			totalHolders: allHolders.length,
+			allHolders: sortedHolders,
+		})
+	} catch (error) {
+		console.error('Ошибка при разборе держателей токенов:', error)
+		return res.status(500).json({ message: 'Internal server error' })
+	}
 }
 
 async function getTokenHolders(page = 1, limit = 100) {
 	try {
 		const response = await axios.get(url, {
-			headers: headers,
-			params: {
-				page: page,
-				limit: limit,
-			},
+			headers,
+			params: { page, limit },
 		})
-
 		return response.data
 	} catch (error) {
-		console.error(`Ошибка при получении информации: ${error.response.status}`)
+		console.error(`Ошибка при получении информации: ${error.message}`)
 		return null
 	}
 }
 
-module.exports = {
-	parseHolders,
-}
+module.exports = { parseHolders }
