@@ -41,9 +41,11 @@ async function parseHolders(req, res) {
 					// Получаем баланс через QuickNode
 					const balance = await getSolanaBalanceViaQuickNode(owner)
 
+					const tokens = await getTokenCount(owner)
 					// Сохраняем только ненулевые значения
 					if (amount > 0 && balance > 0) {
-						return { account, amount, percentage, balance }
+						const usd_balance = balance * (await getSolToUsdRate())
+						return { account, amount, percentage, balance, usd_balance, tokens }
 					}
 				})
 
@@ -89,3 +91,22 @@ async function getTokenHolders(page = 1, limit = 100) {
 }
 
 module.exports = { parseHolders }
+
+async function getSolToUsdRate() {
+	const url =
+		'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'
+
+	try {
+		const response = await axios.get(url)
+
+		if (response.status === 200) {
+			return response.data.solana.usd
+		} else {
+			console.error(`Ошибка при получении курса SOL к USD: ${response.status}`)
+			return null
+		}
+	} catch (error) {
+		console.error(`Ошибка: ${error.message}`)
+		return null
+	}
+}
