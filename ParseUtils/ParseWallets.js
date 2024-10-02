@@ -25,13 +25,8 @@ async function getSolanaBalanceViaQuickNode(wallet) {
 			if (balanceSol > 0) {
 				return balanceSol
 			}
-		} else {
-			console.error(
-				`Ошибка при получении баланса для ${wallet}: ${response.status}`
-			)
 		}
 	} catch (error) {
-		console.error(error)
 		return 0
 	}
 }
