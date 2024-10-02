@@ -1,6 +1,7 @@
 const dotenv = require('dotenv')
 const axios = require('axios')
 const { getSolanaBalanceViaQuickNode } = require('./ParseWallets')
+const { getTokenCount } = require('./ParseTokens')
 dotenv.config()
 
 const url =
@@ -19,11 +20,11 @@ async function parseHolders(req, res) {
 	let requestsCount = 0
 
 	try {
+		const solana_usd = await getSolToUsdRate()
 		while (true) {
 			const tokenInfo = await getTokenHolders(page)
 			requestsCount++
 
-			// Ограничиваем количество запросов в секунду (throttling)
 			if (requestsCount % 10 === 0) {
 				await new Promise(resolve => setTimeout(resolve, 1000))
 			}
@@ -32,26 +33,26 @@ async function parseHolders(req, res) {
 				const holders = tokenInfo.tokenAccounts
 				totalHolders += holders.length
 
-				// Получаем балансы параллельно
 				const holderPromises = holders.map(async account => {
 					const owner = account.info.owner
 					const amount = parseFloat(account.info.tokenAmount.uiAmount)
 					const percentage = (amount / totalSupply) * 100
-
-					// Получаем баланс через QuickNode
-					const balance = await getSolanaBalanceViaQuickNode(owner)
-
 					const tokens = await getTokenCount(owner)
-					// Сохраняем только ненулевые значения
+					const balance = await getSolanaBalanceViaQuickNode(owner)
 					if (amount > 0 && balance > 0) {
-						const usd_balance = balance * (await getSolToUsdRate())
-						return { account, amount, percentage, balance, usd_balance, tokens }
+						return {
+							account,
+							amount,
+							percentage,
+							balance,
+							balance_usd: solana_usd * balance,
+							tokens,
+						}
 					}
 				})
 
-				// Ожидаем завершения всех запросов
 				const resolvedHolders = await Promise.all(holderPromises)
-				allHolders.push(...resolvedHolders.filter(holder => holder)) // Фильтрация нулевых значений
+				allHolders.push(...resolvedHolders.filter(holder => holder))
 
 				page++
 			} else {
@@ -59,12 +60,10 @@ async function parseHolders(req, res) {
 			}
 		}
 
-		// Проверка, если держателей не найдено
 		if (allHolders.length < 1) {
 			return res.status(404).json({ message: 'Not found' })
 		}
 
-		// Сортировка по проценту владения
 		const sortedHolders = allHolders.sort((a, b) => b.percentage - a.percentage)
 
 		return res.status(200).json({
@@ -72,7 +71,6 @@ async function parseHolders(req, res) {
 			allHolders: sortedHolders,
 		})
 	} catch (error) {
-		console.error('Ошибка при разборе держателей токенов:', error)
 		return res.status(500).json({ message: 'Internal server error' })
 	}
 }
@@ -102,11 +100,11 @@ async function getSolToUsdRate() {
 		if (response.status === 200) {
 			return response.data.solana.usd
 		} else {
-			console.error(`Ошибка при получении курса SOL к USD: ${response.status}`)
+			console.error(`Error fetching SOL to USD rate: ${response.status}`)
 			return null
 		}
 	} catch (error) {
-		console.error(`Ошибка: ${error.message}`)
+		console.error(`Error: ${error.message}`)
 		return null
 	}
 }

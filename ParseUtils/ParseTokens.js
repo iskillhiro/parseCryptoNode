@@ -43,17 +43,12 @@ async function getTokenCount(walletAddress) {
 				// Возвращаем количество токенов с ненулевым балансом
 				return nonZeroAccounts.length
 			} else {
-				console.log(`Не удалось получить данные для кошелька: ${walletAddress}`)
 				return 0
 			}
 		} else {
-			console.error(
-				`Ошибка при выполнении запроса для кошелька ${walletAddress}: ${response.status}`
-			)
 			return 0
 		}
 	} catch (error) {
-		console.error(`Ошибка при выполнении запроса: ${error.message}`)
 		return 0
 	}
 }
